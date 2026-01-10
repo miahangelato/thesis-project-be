@@ -31,8 +31,16 @@ ALLOWED_HOSTS=*
 # ALLOWED_HOSTS=thesis-project-be-production.up.railway.app,yourdomain.com
 
 # CSRF & CORS Protection
+# Production URL (required)
 CSRF_TRUSTED_ORIGINS=https://thesis-project-5tu3.vercel.app
 CORS_ALLOWED_ORIGINS=https://thesis-project-5tu3.vercel.app
+
+# For Vercel Preview Deployments:
+# The backend now automatically allows all Vercel preview URLs matching:
+# https://thesis-project-5tu3-*.vercel.app
+# 
+# If you need CSRF protection for previews, add each preview URL manually:
+# CSRF_TRUSTED_ORIGINS=https://thesis-project-5tu3.vercel.app,https://thesis-project-5tu3-preview123.vercel.app
 
 # Database (Railway PostgreSQL or Supabase)
 DATABASE_URL=${{Postgres.DATABASE_URL}}

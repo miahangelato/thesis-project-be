@@ -69,11 +69,21 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-CORS_ALLOWED_ORIGINS = os.getenv(
-    "CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8001"
-).split(",")
-CORS_ALLOW_CREDENTIALS = True
+# CORS Configuration
+# Parse explicit allowed origins from environment
+CORS_ALLOWED_ORIGINS = [
+    origin.strip() 
+    for origin in os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:8001").split(",")
+    if origin.strip()
+]
 
+# Allow Vercel preview deployments using regex
+# This matches URLs like: https://thesis-project-5tu3-*.vercel.app
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https://thesis-project-5tu3.*\.vercel\.app$",  # Vercel preview deployments
+]
+
+CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOW_HEADERS = [*default_headers, "x-api-key"]
 
 ROOT_URLCONF = "config.urls"
@@ -164,7 +174,21 @@ SESSION_COOKIE_SECURE = not DEBUG  # Only send session cookie over HTTPS
 CSRF_COOKIE_SECURE = not DEBUG  # Only send CSRF cookie over HTTPS
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")  # For reverse proxy
 
-CSRF_TRUSTED_ORIGINS = os.getenv("CSRF_TRUSTED_ORIGINS", "http://localhost:3000").split(",")
+# CSRF Trusted Origins
+# Parse from environment variable
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("CSRF_TRUSTED_ORIGINS", "http://localhost:3000").split(",")
+    if origin.strip()
+]
+
+# Add Vercel preview domain pattern if specified
+# For Vercel previews, you can set: VERCEL_PREVIEW_PATTERN=https://*.vercel.app
+vercel_preview_pattern = os.getenv("VERCEL_PREVIEW_PATTERN")
+if vercel_preview_pattern:
+    # Note: Django doesn't support wildcards in CSRF_TRUSTED_ORIGINS
+    # You'll need to add each preview URL manually or disable CSRF for API endpoints
+    pass
 
 # HTTP Strict Transport Security (HSTS)
 # Tells browsers to only use HTTPS for this domain
