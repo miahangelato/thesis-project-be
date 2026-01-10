@@ -1,0 +1,360 @@
+"""PDF report generation service."""
+
+import io
+import re
+from datetime import datetime, timezone
+from typing import Dict
+from xml.sax.saxutils import escape
+
+import qrcode
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import inch
+from reportlab.platypus import (
+    ListFlowable,
+    ListItem,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
+
+
+class PDFReportGenerator:
+    def _draw_page_chrome(self, canvas, doc):
+        """Lightweight header/footer for a more polished look."""
+        canvas.saveState()
+        width, height = letter
+
+        # Header divider
+        canvas.setStrokeColor(colors.HexColor("#d7e2f2"))
+        canvas.setLineWidth(1)
+        canvas.line(
+            0.75 * inch, height - 0.85 * inch, width - 0.75 * inch, height - 0.85 * inch
+        )
+
+        # Footer page number
+        canvas.setFont("Helvetica", 9)
+        canvas.setFillColor(colors.HexColor("#5f6b7a"))
+        canvas.drawRightString(width - 0.75 * inch, 0.65 * inch, f"Page {doc.page}")
+        canvas.restoreState()
+
+    def _is_section_heading(self, text: str) -> bool:
+        # Common headings from the AI output, e.g. emoji-led headings.
+        if not text:
+            return False
+        if len(text) > 80:
+            return False
+        return bool(re.match(r"^[\u2190-\U0010ffff].+", text)) or text.lower() in {
+            "recommendations",
+        }
+
+    def _build_ai_analysis_flowables(self, explanation: str, styles) -> list:
+        """Convert AI explanation text into nicely formatted flowables.
+
+        Supports:
+        - section headings (emoji-led lines like "📊 ...")
+        - bullet lists (lines starting with "- ")
+        - paragraphs (blank-line separated)
+        """
+        if not explanation:
+            return [Paragraph("No AI analysis available.", styles["BodyText"])]
+
+        text = explanation.replace("\r\n", "\n").replace("\r", "\n")
+        text = text.replace("\\n", "\n")
+
+        while "\n\n\n" in text:
+            text = text.replace("\n\n\n", "\n\n")
+
+        body_style = ParagraphStyle(
+            "AI_Body",
+            parent=styles["BodyText"],
+            fontSize=11,
+            leading=15,
+            textColor=colors.HexColor("#1f2937"),
+            spaceAfter=8,
+        )
+        heading_style = ParagraphStyle(
+            "AI_Heading",
+            parent=styles["Heading3"],
+            fontSize=13,
+            leading=16,
+            textColor=colors.HexColor("#0f4c81"),
+            spaceBefore=8,
+            spaceAfter=8,
+        )
+
+        flowables = []
+        blocks = [b.strip() for b in text.split("\n\n") if b.strip()]
+        for block in blocks:
+            lines = [ln.rstrip() for ln in block.split("\n") if ln.strip()]
+            if not lines:
+                continue
+
+            # Single-line heading blocks
+            if len(lines) == 1 and self._is_section_heading(lines[0].strip()):
+                safe = escape(lines[0].strip())
+                flowables.append(Paragraph(safe, heading_style))
+                continue
+
+            # Bullet list blocks
+            if all(ln.lstrip().startswith("- ") for ln in lines):
+                items = []
+                for ln in lines:
+                    item_text = escape(ln.lstrip()[2:].strip())
+                    items.append(ListItem(Paragraph(item_text, body_style)))
+                flowables.append(
+                    ListFlowable(
+                        items,
+                        bulletType="bullet",
+                        leftIndent=14,
+                        bulletFontName="Helvetica",
+                        bulletFontSize=10,
+                        bulletOffsetY=1,
+                    )
+                )
+                flowables.append(Spacer(1, 0.08 * inch))
+                continue
+
+            # Paragraph blocks (preserve single newlines)
+            safe = escape("\n".join(lines))
+            safe = safe.replace("\n", "<br/>")
+            flowables.append(Paragraph(safe, body_style))
+
+        if flowables and isinstance(flowables[-1], Spacer):
+            flowables.pop()
+
+        return flowables
+
+    def _build_explanation_flowables(self, explanation: str, styles) -> list:
+        """Backward-compatible alias (now uses richer AI formatting)."""
+        return self._build_ai_analysis_flowables(explanation, styles)
+
+    def generate_report(self, patient_data: Dict, explanation: str) -> bytes:
+        """Generate PDF report from patient data."""
+
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=letter,
+            leftMargin=0.75 * inch,
+            rightMargin=0.75 * inch,
+            topMargin=0.85 * inch,
+            bottomMargin=0.85 * inch,
+            title="Diabetes Risk Assessment Report",
+        )
+        styles = getSampleStyleSheet()
+        story = []
+
+        title_style = ParagraphStyle(
+            "CustomTitle",
+            parent=styles["Heading1"],
+            fontSize=24,
+            leading=28,
+            alignment=TA_CENTER,
+            textColor=colors.HexColor("#0f4c81"),
+            spaceAfter=18,
+        )
+
+        subtitle_style = ParagraphStyle(
+            "Subtitle",
+            parent=styles["Normal"],
+            fontSize=10,
+            leading=12,
+            alignment=TA_CENTER,
+            textColor=colors.HexColor("#5f6b7a"),
+            spaceAfter=18,
+        )
+
+        section_style = ParagraphStyle(
+            "SectionHeading",
+            parent=styles["Heading2"],
+            fontSize=14,
+            leading=18,
+            textColor=colors.HexColor("#0f4c81"),
+            spaceBefore=10,
+            spaceAfter=10,
+        )
+
+        story.append(Paragraph("Diabetes Risk Assessment Report", title_style))
+        story.append(Paragraph("AI-assisted health screening summary", subtitle_style))
+
+        date_text = (
+            f"Generated: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}"
+        )
+        story.append(Paragraph(date_text, subtitle_style))
+
+        patient_info = [
+            ["Patient Information", ""],
+            ["Age", f"{patient_data['age']} years"],
+            ["Gender", patient_data.get("gender", "Not specified").capitalize()],
+            ["Height", f"{patient_data['height_cm']} cm"],
+            ["Weight", f"{patient_data['weight_kg']} kg"],
+            ["BMI", f"{patient_data['bmi']}"],
+        ]
+
+        patient_table = Table(patient_info, colWidths=[2.5 * inch, 3 * inch])
+        patient_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0f4c81")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                    ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, 0), 14),
+                    ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+                    ("BACKGROUND", (0, 1), (-1, -1), colors.whitesmoke),
+                    (
+                        "ROWBACKGROUNDS",
+                        (0, 1),
+                        (-1, -1),
+                        [colors.whitesmoke, colors.HexColor("#f6f8fb")],
+                    ),
+                    ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#cfd8e3")),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                    ("TOPPADDING", (0, 1), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 1), (-1, -1), 8),
+                ]
+            )
+        )
+
+        story.append(patient_table)
+        story.append(Spacer(1, 0.22 * inch))
+
+        results_data = [
+            ["Assessment Results", ""],
+            ["Diabetes Risk Score", f"{patient_data['risk_score']:.1%}"],
+            ["Risk Level", patient_data["risk_level"]],
+            ["Blood Group", patient_data.get("blood_group", "Not analyzed")],
+        ]
+
+        results_table = Table(results_data, colWidths=[2.5 * inch, 3 * inch])
+        results_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#16803c")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
+                    ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, 0), 14),
+                    ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
+                    ("BACKGROUND", (0, 1), (-1, -1), colors.whitesmoke),
+                    (
+                        "ROWBACKGROUNDS",
+                        (0, 1),
+                        (-1, -1),
+                        [colors.whitesmoke, colors.HexColor("#f6f8fb")],
+                    ),
+                    ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#cfd8e3")),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                    ("TOPPADDING", (0, 1), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 1), (-1, -1), 8),
+                ]
+            )
+        )
+
+        story.append(results_table)
+        story.append(Spacer(1, 0.22 * inch))
+
+        # AI Health Analysis (matches what the UI shows)
+        story.append(Paragraph("AI Health Analysis", section_style))
+        story.extend(self._build_ai_analysis_flowables(explanation, styles))
+        story.append(Spacer(1, 0.22 * inch))
+
+        pattern_data = [
+            ["Fingerprint Pattern Analysis", ""],
+            ["Arc Patterns", str(patient_data.get("pattern_arc", 0))],
+            ["Whorl Patterns", str(patient_data.get("pattern_whorl", 0))],
+            ["Loop Patterns", str(patient_data.get("pattern_loop", 0))],
+        ]
+
+        pattern_table = Table(pattern_data, colWidths=[2.5 * inch, 3 * inch])
+        pattern_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#fbbc04")),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.black),
+                    ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                    ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ("FONTSIZE", (0, 0), (-1, 0), 14),
+                    ("BACKGROUND", (0, 1), (-1, -1), colors.whitesmoke),
+                    (
+                        "ROWBACKGROUNDS",
+                        (0, 1),
+                        (-1, -1),
+                        [colors.whitesmoke, colors.HexColor("#f6f8fb")],
+                    ),
+                    ("BOX", (0, 0), (-1, -1), 0.8, colors.HexColor("#cfd8e3")),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 10),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                    ("TOPPADDING", (0, 1), (-1, -1), 8),
+                    ("BOTTOMPADDING", (0, 1), (-1, -1), 8),
+                ]
+            )
+        )
+
+        story.append(pattern_table)
+        story.append(Spacer(1, 0.5 * inch))
+
+        disclaimer_style = ParagraphStyle(
+            "Disclaimer",
+            parent=styles["Italic"],
+            fontSize=9,
+            leading=12,
+            textColor=colors.HexColor("#5f6b7a"),
+            spaceBefore=12,
+        )
+        disclaimer = (
+            "This assessment is for informational purposes only and does not constitute medical advice. "
+            "Please consult with a healthcare professional for proper medical evaluation and diagnosis."
+        )
+        story.append(Paragraph(disclaimer, disclaimer_style))
+
+        doc.build(
+            story,
+            onFirstPage=self._draw_page_chrome,
+            onLaterPages=self._draw_page_chrome,
+        )
+        pdf_bytes = buffer.getvalue()
+        buffer.close()
+
+        return pdf_bytes
+
+    def generate_qr_code(self, url: str) -> bytes:
+        """Generate QR code for PDF download link."""
+        qr = qrcode.QRCode(
+            version=1,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=10,
+            border=4,
+        )
+        qr.add_data(url)
+        qr.make(fit=True)
+
+        img = qr.make_image(fill_color="black", back_color="white")
+
+        buffer = io.BytesIO()
+        img.save(buffer, format="PNG")
+        qr_bytes = buffer.getvalue()
+        buffer.close()
+
+        return qr_bytes
+
+
+_pdf_generator = None
+
+
+def get_pdf_generator() -> PDFReportGenerator:
+    """Singleton for PDF generator."""
+    global _pdf_generator  # noqa: PLW0603
+    if _pdf_generator is None:
+        _pdf_generator = PDFReportGenerator()
+    return _pdf_generator
