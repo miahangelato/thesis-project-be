@@ -234,6 +234,24 @@ PASSWORD_HASHERS = [
 ]
 
 # Logging Configuration
+# Build handlers dict based on DEBUG mode
+_log_handlers = {
+    "console": {
+        "level": "DEBUG" if DEBUG else "INFO",
+        "class": "logging.StreamHandler",
+        "formatter": "verbose",
+    },
+}
+
+# Only add file handler in DEBUG mode (when logs directory exists)
+if DEBUG:
+    _log_handlers["file"] = {
+        "level": "ERROR",
+        "class": "logging.FileHandler",
+        "filename": BASE_DIR / "logs" / "errors.log",
+        "formatter": "verbose",
+    }
+
 LOGGING = {
     "version": 1,
     "disable_existing_loggers": False,
@@ -256,19 +274,7 @@ LOGGING = {
             "()": "django.utils.log.RequireDebugTrue",
         },
     },
-    "handlers": {
-        "console": {
-            "level": "DEBUG" if DEBUG else "INFO",
-            "class": "logging.StreamHandler",
-            "formatter": "verbose",
-        },
-        "file": {
-            "level": "ERROR",
-            "class": "logging.FileHandler",
-            "filename": BASE_DIR / "logs" / "errors.log",
-            "formatter": "verbose",
-        },
-    },
+    "handlers": _log_handlers,
     "root": {
         "handlers": ["console"],
         "level": "DEBUG" if DEBUG else "INFO",
@@ -280,12 +286,14 @@ LOGGING = {
             "propagate": False,
         },
         "django.security": {
-            "handlers": ["console", "file"],
+            # Only use file handler in DEBUG mode
+            "handlers": ["console", "file"] if DEBUG else ["console"],
             "level": "WARNING",
             "propagate": False,
         },
         "api": {
-            "handlers": ["console", "file"],
+            # Only use file handler in DEBUG mode
+            "handlers": ["console", "file"] if DEBUG else ["console"],
             "level": "DEBUG" if DEBUG else "INFO",
             "propagate": False,
         },
