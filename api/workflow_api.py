@@ -383,6 +383,42 @@ def get_results(request, session_id: str):
     predictions = session["predictions"]
     demographics = session["demographics"]
 
+    # ====== AUTO-GENERATE PDF + QR CODE (FOR ALL USERS) ======
+    logger.info(f"[PDF] Auto-generating PDF and QR code for session {session_id}")
+    
+    # Prepare patient data for PDF
+    patient_data = {
+        **demographics,
+        "pattern_arc": predictions["pattern_counts"]["arc"],
+        "pattern_whorl": predictions["pattern_counts"]["whorl"],
+        "pattern_loop": predictions["pattern_counts"]["loop"],
+        "risk_score": predictions["diabetes_risk"],
+        "risk_level": predictions["risk_level"],
+        "blood_group": predictions.get("blood_group", "Not analyzed"),
+    }
+    
+    # Generate PDF
+    pdf_gen = get_pdf_generator()
+    pdf_bytes = pdf_gen.generate_report(patient_data, predictions["explanation"])
+    logger.info(f"[PDF] Generated PDF report ({len(pdf_bytes)} bytes)")
+    
+    # Save PDF to storage
+    storage = get_storage()
+    filename = f"report_{session_id}.pdf"
+    pdf_url = storage.save_file(pdf_bytes, filename, folder="reports")
+    logger.info(f"[PDF] Saved PDF to storage: {pdf_url}")
+    
+    # Generate QR code with download URL
+    base_url = _get_public_base_url(request)
+    download_url = f"{base_url}/api/session/{session_id}/download-pdf"
+    qr_bytes = pdf_gen.generate_qr_code(download_url)
+    logger.info(f"[QR] Generated QR code for URL: {download_url}")
+    
+    # Save QR code to storage
+    qr_filename = f"qr_{session_id}.png"
+    qr_url = storage.save_file(qr_bytes, qr_filename, folder="qr_codes")
+    logger.info(f"[QR] Saved QR code to storage: {qr_url}")
+
     record_id = None
     saved = False
 
@@ -440,6 +476,9 @@ def get_results(request, session_id: str):
         "bmi": demographics["bmi"],
         "saved_to_database": saved,
         "record_id": record_id,
+        # QR Code & PDF Download
+        "qr_code_url": qr_url,
+        "download_url": download_url,
         # Include demographics
         "age": demographics.get("age"),
         "weight_kg": demographics.get("weight_kg"),

@@ -73,14 +73,19 @@ class ResultsResponse(BaseModel):
     diabetes_risk: float
     risk_level: str
     blood_group: Optional[str]
+    blood_group_confidence: Optional[float] = None
     explanation: str
     bmi: float
     saved_to_database: bool
     record_id: Optional[str]
+    # QR Code & PDF Download
+    qr_code_url: str = Field(description="URL to QR code image for phone download")
+    download_url: str = Field(description="Direct PDF download URL")
     # Demographics
     age: Optional[int]
     weight_kg: Optional[float]
     height_cm: Optional[float]
     gender: Optional[str]
+    willing_to_donate: Optional[bool] = False
     # Pattern counts
     pattern_counts: Optional[Dict[str, int]]
