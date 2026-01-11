@@ -59,17 +59,27 @@ def download_file(url: str, destination: Path, timeout: int = 120) -> bool:
         return False
 
 
-def download_models_from_github():
-    """Download all required models from GitHub releases."""
-    # Get GitHub info from environment or use defaults
-    github_repo = os.getenv("GITHUB_REPO", "miahangelo/thesis-project-be")
-    github_tag = os.getenv("MODELS_RELEASE_TAG", "models-v1.0")
-    
+def download_models_from_storage():
+    """Download all required models from configured storage."""
     # Base directory (same as in ml_service.py)
     base_dir = Path(__file__).parent.parent / "shared-models"
     base_dir.mkdir(parents=True, exist_ok=True)
     
-    logger.info(f"Downloading models from GitHub: {github_repo} @ {github_tag}")
+    # Check for MODEL_STORAGE_URL first (direct URL to release downloads)
+    storage_url = os.getenv("MODEL_STORAGE_URL")
+    
+    if storage_url:
+        # User has set MODEL_STORAGE_URL (e.g., from Railway)
+        # Format: https://github.com/USER/REPO/releases/download/TAG
+        logger.info(f"Using MODEL_STORAGE_URL: {storage_url}")
+        base_url = storage_url.rstrip("/")
+    else:
+        # Fall back to GITHUB_REPO + MODELS_RELEASE_TAG
+        github_repo = os.getenv("GITHUB_REPO", "miahangelato/thesis-project")
+        github_tag = os.getenv("MODELS_RELEASE_TAG", "v1.0-models")
+        base_url = f"https://github.com/{github_repo}/releases/download/{github_tag}"
+        logger.info(f"Using GitHub: {github_repo} @ {github_tag}")
+    
     logger.info(f"Target directory: {base_dir}")
     
     success_count = 0
@@ -84,8 +94,8 @@ def download_models_from_github():
             success_count += 1
             continue
         
-        # Construct GitHub release download URL
-        url = f"https://github.com/{github_repo}/releases/download/{github_tag}/{model_file}"
+        # Construct download URL
+        url = f"{base_url}/{model_file}"
         
         if download_file(url, destination):
             success_count += 1
@@ -97,8 +107,8 @@ def download_models_from_github():
     if failed_models:
         logger.error(f"Failed to download: {', '.join(failed_models)}")
         logger.error("\nPlease ensure:")
-        logger.error(f"1. GitHub repository '{github_repo}' is accessible")
-        logger.error(f"2. Release tag '{github_tag}' exists")
+        logger.error(f"1. MODEL_STORAGE_URL or GITHUB_REPO/MODELS_RELEASE_TAG is set correctly")
+        logger.error(f"2. GitHub release is public and accessible")
         logger.error(f"3. All model files are uploaded to the release")
         return False
     
@@ -107,5 +117,5 @@ def download_models_from_github():
 
 
 if __name__ == "__main__":
-    success = download_models_from_github()
+    success = download_models_from_storage()
     sys.exit(0 if success else 1)
