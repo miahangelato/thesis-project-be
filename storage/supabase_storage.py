@@ -128,11 +128,21 @@ class SupabaseStorage(StorageInterface):
         self, file_data: bytes, filename: str, folder: str = "reports"
     ) -> str:
         try:
-            self.client.storage.from_(folder).upload(filename, file_data)
+            # Upload with metadata to ensure proper PDF handling
+            self.client.storage.from_(folder).upload(
+                filename,
+                file_data,
+                file_options={
+                    "content-type": "application/pdf",
+                    "cache-control": "3600",
+                }
+            )
 
-            # Use signed URL with 24-hour expiry for user download convenience
+            # Use signed URL with 24-hour expiry and force download
             response = self.client.storage.from_(folder).create_signed_url(
-                filename, 86400
+                filename,
+                86400,
+                options={"download": True}  # Forces Content-Disposition: attachment
             )
 
             # Helper to extract URL from response (it might differ based on supabase-py version)
@@ -150,10 +160,12 @@ class SupabaseStorage(StorageInterface):
             raise
 
     def get_file_url(self, filename: str, folder: str = "reports") -> str:
-        # Use signed URL for retrieval with 24-hour expiry
+        # Use signed URL for retrieval with 24-hour expiry and force download
         try:
             response = self.client.storage.from_(folder).create_signed_url(
-                filename, 86400
+                filename,
+                86400,
+                options={"download": True}
             )
             return (
                 response["signedURL"]
