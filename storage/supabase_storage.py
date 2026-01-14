@@ -128,21 +128,34 @@ class SupabaseStorage(StorageInterface):
         self, file_data: bytes, filename: str, folder: str = "reports"
     ) -> str:
         try:
-            # Upload with metadata to ensure proper PDF handling
+            # Determine content type based on file extension or folder
+            if folder == "qr_codes" or filename.endswith(".png"):
+                content_type = "image/png"
+            elif filename.endswith(".pdf"):
+                content_type = "application/pdf"
+            else:
+                content_type = "application/octet-stream"
+            
+            # Upload with appropriate metadata
             self.client.storage.from_(folder).upload(
                 filename,
                 file_data,
                 file_options={
-                    "content-type": "application/pdf",
+                    "content-type": content_type,
                     "cache-control": "3600",
                 }
             )
 
-            # Use signed URL with 24-hour expiry and force download
+            # Use signed URL with 24-hour expiry
+            # For QR codes, allow inline display; for PDFs, force download
+            sign_options = {}
+            if content_type == "application/pdf":
+                sign_options["download"] = True  # Forces Content-Disposition: attachment
+            
             response = self.client.storage.from_(folder).create_signed_url(
                 filename,
                 86400,
-                options={"download": True}  # Forces Content-Disposition: attachment
+                options=sign_options
             )
 
             # Helper to extract URL from response (it might differ based on supabase-py version)
@@ -160,12 +173,17 @@ class SupabaseStorage(StorageInterface):
             raise
 
     def get_file_url(self, filename: str, folder: str = "reports") -> str:
-        # Use signed URL for retrieval with 24-hour expiry and force download
+        # Use signed URL for retrieval with 24-hour expiry
         try:
+            # For PDFs force download, for images allow inline display
+            sign_options = {}
+            if folder == "reports" or filename.endswith(".pdf"):
+                sign_options["download"] = True
+            
             response = self.client.storage.from_(folder).create_signed_url(
                 filename,
                 86400,
-                options={"download": True}
+                options=sign_options
             )
             return (
                 response["signedURL"]
