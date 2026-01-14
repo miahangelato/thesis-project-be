@@ -408,11 +408,10 @@ def get_results(request, session_id: str):
     pdf_url = storage.save_file(pdf_bytes, filename, folder="reports")
     logger.info(f"[PDF] Saved PDF to storage: {pdf_url}")
     
-    # Generate QR code with download URL
-    base_url = _get_public_base_url(request)
-    download_url = f"{base_url}/api/session/{session_id}/download-pdf"
-    qr_bytes = pdf_gen.generate_qr_code(download_url)
-    logger.info(f"[QR] Generated QR code for URL: {download_url}")
+    # Generate QR code with DIRECT Supabase URL (not session-dependent)
+    # This allows downloads even after session is deleted
+    qr_bytes = pdf_gen.generate_qr_code(pdf_url)  # Use direct PDF URL!
+    logger.info(f"[QR] Generated QR code for URL: {pdf_url}")
     
     # Save QR code to storage
     qr_filename = f"qr_{session_id}.png"
@@ -478,7 +477,7 @@ def get_results(request, session_id: str):
         "record_id": record_id,
         # QR Code & PDF Download
         "qr_code_url": qr_url,
-        "download_url": download_url,
+        "download_url": pdf_url,  # Direct Supabase URL (works after session deleted)
         # Include demographics
         "age": demographics.get("age"),
         "weight_kg": demographics.get("weight_kg"),
@@ -517,12 +516,17 @@ def generate_pdf_report(request, session_id: str):
     filename = f"report_{session_id}.pdf"
     pdf_url = storage.save_file(pdf_bytes, filename, folder="reports")
 
-    # For now, use the direct stored PDF URL (e.g. /media/reports/...) for both
-    # downloads and QR codes. This avoids embedding a LAN IP in the QR.
+    # For Option 1: Use direct Supabase signed URL (24-hour expiry)
+    # This URL can be used directly for downloads and QR codes
     download_url = pdf_url
     qr_bytes = pdf_gen.generate_qr_code(pdf_url)
     qr_filename = f"qr_{session_id}.png"
     qr_url = storage.save_file(qr_bytes, qr_filename, folder="qr_codes")
+    
+    # Store PDF URL in session for later retrieval
+    session["pdf_url"] = pdf_url
+    session_mgr._save_sessions()
+    
     return {
         "success": True,
         "pdf_url": pdf_url,

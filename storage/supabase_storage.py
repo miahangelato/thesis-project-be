@@ -130,9 +130,9 @@ class SupabaseStorage(StorageInterface):
         try:
             self.client.storage.from_(folder).upload(filename, file_data)
 
-            # Use signed URL by default for security (10 minutes expiry)
+            # Use signed URL with 24-hour expiry for user download convenience
             response = self.client.storage.from_(folder).create_signed_url(
-                filename, 600
+                filename, 86400
             )
 
             # Helper to extract URL from response (it might differ based on supabase-py version)
@@ -150,10 +150,10 @@ class SupabaseStorage(StorageInterface):
             raise
 
     def get_file_url(self, filename: str, folder: str = "reports") -> str:
-        # Use signed URL for retrieval too
+        # Use signed URL for retrieval with 24-hour expiry
         try:
             response = self.client.storage.from_(folder).create_signed_url(
-                filename, 600
+                filename, 86400
             )
             return (
                 response["signedURL"]

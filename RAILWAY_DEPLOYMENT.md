@@ -47,7 +47,7 @@ DATABASE_URL=${{Postgres.DATABASE_URL}}
 # OR for Supabase:
 # DATABASE_URL=postgres://postgres:[PASSWORD]@[HOST]:[PORT]/postgres
 
-# Model Storage
+# Model Storage (GitHub Releases)
 MODEL_STORAGE_URL=https://github.com/miahangelato/thesis-project/releases/download/v1.0-models
 ```
 
