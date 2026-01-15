@@ -13,6 +13,7 @@ from storage import get_storage
 from .gemini_service import get_gemini_service
 from .pdf_schemas import PDFGenerateResponse
 from .pdf_service import get_pdf_generator
+from .security_utils import sanitize_ai_content
 from .session_manager import get_session_manager
 from .workflow_schemas import (
     AnalysisResponse,
@@ -298,7 +299,9 @@ def analyze_patient(request, session_id: str):
             },
             demographics,
         )
-        logger.info("🤖 AI explanation generated")
+       # Sanitize AI-generated content to prevent XSS
+        explanation = sanitize_ai_content(explanation)
+        logger.info("🤖 AI explanation generated and sanitized")
 
         # Use static facility list to avoid hitting API quota limits
         # AI facility generation disabled to conserve API calls

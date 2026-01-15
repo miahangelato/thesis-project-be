@@ -341,6 +341,29 @@ FILE_UPLOAD_MAX_MEMORY_SIZE = 5242880  # 5MB max file size
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", "30"))
 
 # ==============================================================================
+# SECURITY HEADERS (Production)
+# ==============================================================================
+
+if not DEBUG:
+    # HTTPS/SSL Settings
+    SECURE_SSL_REDIRECT = True
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    
+    # HSTS (HTTP Strict Transport Security)
+    SECURE_HSTS_SECONDS = 31536000  # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    
+    # Security Headers
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_BROWSER_XSS_FILTER = True
+    X_FRAME_OPTIONS = "DENY"
+    
+    # Referrer Policy
+    SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
+
+# ==============================================================================
 # DEVELOPMENT OVERRIDES
 # ==============================================================================
 
@@ -361,3 +384,4 @@ if DEBUG:
     import os
 
     os.makedirs(BASE_DIR / "logs", exist_ok=True)
+

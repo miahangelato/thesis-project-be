@@ -20,12 +20,17 @@ class ConsentUpdateRequest(BaseModel):
 
 
 class DemographicsRequest(BaseModel):
-    age: int = Field(gt=0, lt=150)
-    weight_kg: float = Field(gt=0)
-    height_cm: float = Field(gt=0)
+    age: int = Field(gt=0, lt=150, description="Age in years")
+    weight_kg: float = Field(gt=10, lt=500, description="Weight in kg (10-500)")
+    height_cm: float = Field(gt=50, lt=300, description="Height in cm (50-300)")
     gender: Literal["male", "female", "other", "prefer_not_say"]
     willing_to_donate: bool = False
-    blood_type: Optional[str] = None
+    blood_type: Optional[str] = Field(
+        None, 
+        max_length=10,
+        pattern=r'^(A|B|AB|O)[+-]?$',
+        description="Blood type (A+, B-, etc.) - optional"
+    )
 
 
 class FingerprintRequest(BaseModel):
