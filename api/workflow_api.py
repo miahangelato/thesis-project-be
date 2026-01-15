@@ -541,13 +541,25 @@ def generate_pdf_report(request, session_id: str):
     }
 
 
-@router.get("/{session_id}/download-pdf", tags=["Workflow"])
+@router.get("/{session_id}/download-pdf", auth=None, tags=["Workflow"])
 def download_pdf_report(request, session_id: str):
-    """Direct PDF download endpoint.
-
+    """Public PDF download endpoint (no API key required).
+    
+    Security:
+    - Session ID acts as a secret token (UUID format, hard to guess)
+    - Supabase URLs are signed with 24-hour expiration
+    - File lookup prevents unauthorized access to non-existent files
+    
     For local storage, returns a FileResponse with Content-Disposition attachment.
-    For remote storage, redirects to the public file URL.
+    For remote storage, redirects to the signed Supabase URL.
     """
+    import re
+    
+    # Basic validation: session_id should be UUID format
+    # This prevents path traversal attacks
+    if not re.match(r'^[a-f0-9-]{36}$', session_id):
+        return JsonResponse({"error": "Invalid session ID"}, status=400)
+    
     storage = get_storage()
     filename = f"report_{session_id}.pdf"
 
@@ -564,7 +576,7 @@ def download_pdf_report(request, session_id: str):
         )
         return response
 
-    # Fallback: redirect to whatever the storage backend says
+    # Supabase: redirect to signed URL (already has 24-hour expiration)
     try:
         pdf_url = storage.get_file_url(filename, folder="reports")
         return HttpResponseRedirect(pdf_url)
