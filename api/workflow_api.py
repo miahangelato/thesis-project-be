@@ -550,10 +550,11 @@ def download_pdf_report(request, session_id: str):
     - Supabase URLs are signed with 24-hour expiration
     - File lookup prevents unauthorized access to non-existent files
     
-    For local storage, returns a FileResponse with Content-Disposition attachment.
-    For remote storage, redirects to the signed Supabase URL.
+    Streams the PDF through the backend to maintain custom domain in browser URL.
     """
     import re
+    import requests
+    from django.http import StreamingHttpResponse
     
     # Basic validation: session_id should be UUID format
     # This prevents path traversal attacks
@@ -576,9 +577,31 @@ def download_pdf_report(request, session_id: str):
         )
         return response
 
-    # Supabase: redirect to signed URL (already has 24-hour expiration)
+    # Supabase: Stream the file through backend (keeps custom domain in URL)
     try:
         pdf_url = storage.get_file_url(filename, folder="reports")
-        return HttpResponseRedirect(pdf_url)
-    except Exception:
+        
+        # Fetch file from Supabase
+        file_response = requests.get(pdf_url, stream=True)
+        
+        if file_response.status_code != 200:
+            return JsonResponse({"error": "PDF not found"}, status=404)
+        
+        # Stream the file through Django
+        response = StreamingHttpResponse(
+            file_response.iter_content(chunk_size=8192),
+            content_type="application/pdf"
+        )
+        response["Content-Disposition"] = (
+            f'attachment; filename="health_report_{session_id}.pdf"'
+        )
+        
+        # Copy content length if available
+        if 'content-length' in file_response.headers:
+            response['Content-Length'] = file_response.headers['content-length']
+        
+        return response
+        
+    except Exception as e:
+        logger.error(f"Failed to stream PDF: {e}")
         return JsonResponse({"error": "PDF not found"}, status=404)
